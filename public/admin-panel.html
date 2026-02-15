@@ -1,0 +1,2603 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RunLog Admin - 관리자 페이지</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #64748b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: {
+              50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
+              400: '#94a3b8', 500: '#64748b', 600: '#475569', 700: '#334155',
+              800: '#1e293b', 900: '#0f172a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-navy-50">
+  <div id="admin-root"></div>
+
+  <!-- Firebase 초기화 -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getAuth, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getFirestore, collection, query, where, orderBy, getDocs, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA4KFdLVKVy6WdAfTGuLWDJsV_tcuNp7kw",
+      authDomain: "run-log-31420.firebaseapp.com",
+      projectId: "run-log-31420",
+      storageBucket: "run-log-31420.firebasestorage.app",
+      messagingSenderId: "325067679087",
+      appId: "1:325067679087:web:727201211a34ac6c1fb49a",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    window.firebaseAuth = getAuth(app);
+    window.firebaseDb = getFirestore(app);
+    window.firebaseModules = { signOut, onAuthStateChanged, collection, query, where, orderBy, getDocs, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, Timestamp };
+  </script>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const auth = window.firebaseAuth;
+    const db = window.firebaseDb;
+    const { signOut, onAuthStateChanged, collection, query, where, orderBy, getDocs, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, Timestamp } = window.firebaseModules;
+
+
+    // ========== useAdminAuth Hook ==========
+    const useAdminAuth = () => {
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [adminRole, setAdminRole] = useState(null);
+      const [permissions, setPermissions] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        const checkAdmin = async () => {
+          const auth = window.firebaseAuth;
+          const db = window.firebaseDb;
+          
+          onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+              setIsAdmin(false);
+              setLoading(false);
+              return;
+            }
+
+            try {
+              const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+              
+              if (adminDoc.exists()) {
+                const data = adminDoc.data();
+                setIsAdmin(true);
+                setAdminRole(data.role);
+                setPermissions(data.permissions || []);
+              } else {
+                setIsAdmin(false);
+              }
+            } catch (error) {
+              console.error('관리자 권한 확인 실패:', error);
+              setIsAdmin(false);
+            } finally {
+              setLoading(false);
+            }
+          });
+        };
+
+        checkAdmin();
+      }, []);
+
+      const hasPermission = (permission) => {
+        return permissions.includes(permission) || adminRole === 'master';
+      };
+
+      return { isAdmin, adminRole, permissions, hasPermission, loading };
+    };
+
+
+    // ========== StatsCard Component ==========
+const StatsCard = ({ title, value, subtitle, icon, trend, onClick }) => {
+  return (
+    <div 
+      className={`bg-white rounded-xl shadow-sm p-6 ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <p className="text-sm text-navy-600 mb-1">{title}</p>
+          <h3 className="text-3xl font-bold text-navy-900">{value}</h3>
+          {subtitle && (
+            <p className="text-xs text-navy-500 mt-1">{subtitle}</p>
+          )}
+        </div>
+        {icon && (
+          <div className="text-4xl opacity-50">{icon}</div>
+        )}
+      </div>
+      {trend !== undefined && trend !== null && (
+        <div className={`text-sm font-semibold flex items-center gap-1 ${
+          trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-navy-600'
+        }`}>
+          {trend > 0 ? '↑' : trend < 0 ? '↓' : '→'} 
+          {trend !== 0 && `${Math.abs(trend)}%`}
+          {trend === 0 && '변동 없음'}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
+    // ========== AdminSidebar Component ==========
+
+const AdminSidebar = ({ currentPage, setCurrentPage }) => {
+      const menuItems = [
+        { page: 'dashboard', label: '대시보드', icon: '📊' },
+        { page: 'users', label: '사용자 관리', icon: '👥' },
+        { page: 'content', label: '콘텐츠 관리', icon: '📝' },
+        { page: 'crews', label: '크루 관리', icon: '👥' },
+        { page: 'reports', label: '신고 관리', icon: '⚠️' },
+        { page: 'statistics', label: '통계', icon: '📈' },
+        { page: 'settings', label: '설정', icon: '⚙️' },
+      ];
+
+      return (
+        <aside className="w-64 bg-white shadow-sm min-h-[calc(100vh-73px)] sticky top-[73px]">
+          <nav className="p-4 space-y-2">
+            {menuItems.map((item) => (
+              <button
+                key={item.page}
+                onClick={() => setCurrentPage(item.page)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  currentPage === item.page
+                    ? 'bg-navy-700 text-white'
+                    : 'text-navy-700 hover:bg-navy-100'
+                }`}
+              >
+                <span className="text-xl">{item.icon}</span>
+                <span className="font-medium">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </aside>
+      );
+    };
+
+
+
+    // ========== AdminLayout Component ==========
+
+
+
+
+
+    // ========== AdminRoute Component ==========
+
+const AdminRoute = ({ children }) => {
+  const { isAdmin, loading } = useAdminAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-navy-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">권한 확인 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+
+
+    // ========== AdminDashboard Page ==========
+
+const AdminDashboard = ({ setCurrentPage }) => {
+  
+  const db = window.firebaseDb;
+  
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    newUsersThisWeek: 0,
+    activeUsers: 0,
+    totalRuns: 0,
+    totalCrews: 0,
+    totalComments: 0,
+    pendingReports: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      // 전체 사용자
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const totalUsers = usersSnapshot.size;
+
+      // 이번 주 신규 사용자
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const newUsersQuery = query(
+        collection(db, 'users'),
+        where('createdAt', '>=', Timestamp.fromDate(weekAgo))
+      );
+      const newUsersSnapshot = await getDocs(newUsersQuery);
+      const newUsersThisWeek = newUsersSnapshot.size;
+
+      // 활성 사용자 (30일 내 기록 추가)
+      const monthAgo = new Date();
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      const activeRunsQuery = query(
+        collection(db, 'runs'),
+        where('createdAt', '>=', Timestamp.fromDate(monthAgo))
+      );
+      const activeRunsSnapshot = await getDocs(activeRunsQuery);
+      const activeUserIds = new Set(activeRunsSnapshot.docs.map(doc => doc.data().userId));
+      const activeUsers = activeUserIds.size;
+
+      // 총 기록
+      const runsSnapshot = await getDocs(collection(db, 'runs'));
+      const totalRuns = runsSnapshot.size;
+
+      // 총 크루 (있으면)
+      let totalCrews = 0;
+      try {
+        const crewsSnapshot = await getDocs(collection(db, 'crews'));
+        totalCrews = crewsSnapshot.size;
+      } catch (e) {
+        console.log('크루 컬렉션 없음');
+      }
+
+      // 총 댓글 (있으면)
+      let totalComments = 0;
+      try {
+        const commentsSnapshot = await getDocs(collection(db, 'comments'));
+        totalComments = commentsSnapshot.size;
+      } catch (e) {
+        console.log('댓글 컬렉션 없음');
+      }
+
+      // 대기 중인 신고 (있으면)
+      let pendingReports = 0;
+      try {
+        const reportsQuery = query(
+          collection(db, 'reports'),
+          where('status', '==', 'pending')
+        );
+        const reportsSnapshot = await getDocs(reportsQuery);
+        pendingReports = reportsSnapshot.size;
+      } catch (e) {
+        console.log('신고 컬렉션 없음');
+      }
+
+      setStats({
+        totalUsers,
+        newUsersThisWeek,
+        activeUsers,
+        totalRuns,
+        totalCrews,
+        totalComments,
+        pendingReports,
+      });
+
+      // 최근 활동 (최근 10개 기록)
+      const recentRunsQuery = query(
+        collection(db, 'runs'),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      );
+      const recentRunsSnapshot = await getDocs(recentRunsQuery);
+      const activities = [];
+
+      for (const runDoc of recentRunsSnapshot.docs) {
+        const runData = runDoc.data();
+        try {
+          const userDoc = await getDocs(
+            query(collection(db, 'users'), where('__name__', '==', runData.userId))
+          );
+          const userData = userDoc.docs[0]?.data();
+
+          activities.push({
+            id: runDoc.id,
+            type: 'run',
+            userName: userData?.nickname || '알 수 없음',
+            userId: runData.userId,
+            content: runData.raceName || runData.location || '기록',
+            time: runData.createdAt?.toDate(),
+          });
+        } catch (e) {
+          console.error('활동 로드 실패:', e);
+        }
+      }
+
+      setRecentActivity(activities);
+    } catch (error) {
+      console.error('대시보드 데이터 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (date) => {
+    if (!date) return '';
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+
+    if (diff < 60) return '방금 전';
+    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+    return `${Math.floor(diff / 86400)}일 전`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">데이터 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">대시보드</h2>
+        <p className="text-navy-600 mt-1">RunLog 전체 현황을 확인하세요</p>
+      </div>
+
+      {/* 통계 카드 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="전체 사용자"
+          value={stats.totalUsers.toLocaleString()}
+          icon="👥"
+          onClick={() => window.location.href = '/admin.html'}
+        />
+        <StatsCard
+          title="신규 사용자"
+          value={stats.newUsersThisWeek.toLocaleString()}
+          subtitle="이번 주"
+          icon="✨"
+        />
+        <StatsCard
+          title="활성 사용자"
+          value={stats.activeUsers.toLocaleString()}
+          subtitle="최근 30일"
+          icon="🔥"
+        />
+        <StatsCard
+          title="총 기록"
+          value={stats.totalRuns.toLocaleString()}
+          icon="🏃"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatsCard
+          title="총 크루"
+          value={stats.totalCrews.toLocaleString()}
+          icon="👥"
+        />
+        <StatsCard
+          title="총 댓글"
+          value={stats.totalComments.toLocaleString()}
+          icon="💬"
+        />
+        <StatsCard
+          title="대기 중인 신고"
+          value={stats.pendingReports.toLocaleString()}
+          icon="⚠️"
+        />
+      </div>
+
+      {/* 최근 활동 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-navy-900">최근 활동</h3>
+          <button
+            onClick={() => setCurrentPage('content')}
+            className="text-sm text-navy-600 hover:text-navy-900"
+          >
+            전체 보기 →
+          </button>
+        </div>
+        <div className="space-y-3">
+          {recentActivity.length === 0 ? (
+            <p className="text-navy-500 text-center py-8">활동이 없습니다</p>
+          ) : (
+            recentActivity.map((activity) => (
+              <div
+                key={activity.id}
+                className="flex items-center justify-between py-3 border-b border-navy-100 last:border-0 hover:bg-navy-50 px-2 rounded transition-colors"
+              >
+                <div className="flex-1">
+                  <p className="text-sm text-navy-900">
+                    <span className="font-semibold">{activity.userName}</span>
+                    <span className="text-navy-600"> 님이 </span>
+                    <span className="font-medium">{activity.content}</span>
+                    <span className="text-navy-600"> 기록을 추가했습니다</span>
+                  </p>
+                </div>
+                <span className="text-xs text-navy-400 ml-4">
+                  {formatTime(activity.time)}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+    // ========== UserManagement Page ==========
+
+const UserManagement = ({ setCurrentPage, setSelectedUserId }) => {
+  
+  const db = window.firebaseDb;
+  
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all'); // all, active, suspended
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const usersQuery = query(
+        collection(db, 'users'),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(usersQuery);
+      const usersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsers(usersData);
+    } catch (error) {
+      console.error('사용자 로드 실패:', error);
+      alert('사용자 목록을 불러오는데 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuspendUser = async (userId, suspend) => {
+    const action = suspend ? '정지' : '정지 해제';
+    if (!confirm(`이 사용자를 ${action}하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        suspended: suspend,
+        suspendedAt: suspend ? Timestamp.now() : null
+      });
+      
+      alert(`사용자가 ${action}되었습니다.`);
+      loadUsers();
+    } catch (error) {
+      console.error('사용자 정지 실패:', error);
+      alert('오류가 발생했습니다.');
+    }
+  };
+
+  const filteredUsers = users.filter(user => {
+    // 검색 필터
+    const matchesSearch = 
+      user.nickname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.id.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    // 상태 필터
+    if (filterStatus === 'active') return !user.suspended;
+    if (filterStatus === 'suspended') return user.suspended;
+    return true; // all
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">사용자 목록 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-navy-900">사용자 관리</h2>
+          <p className="text-navy-600 mt-1">전체 {users.length.toLocaleString()}명</p>
+        </div>
+      </div>
+
+      {/* 검색 & 필터 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-4">
+          <input
+            type="text"
+            placeholder="닉네임, 이메일 또는 ID로 검색..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none"
+          />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none bg-white"
+          >
+            <option value="all">전체</option>
+            <option value="active">정상</option>
+            <option value="suspended">정지됨</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 사용자 테이블 */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-navy-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  닉네임
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  이메일
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  가입일
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  상태
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase tracking-wider">
+                  작업
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-navy-100">
+              {filteredUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-navy-50 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-navy-500">
+                    #{user.id.slice(0, 8)}...
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {user.photoURL ? (
+                        <img 
+                          src={user.photoURL} 
+                          alt={user.nickname}
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-navy-200 flex items-center justify-center text-navy-600 text-xs font-bold">
+                          {user.nickname?.[0]?.toUpperCase() || '?'}
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-navy-900">
+                        {user.nickname || '알 수 없음'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-navy-500">
+                    {user.email}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-navy-500">
+                    {user.createdAt?.toDate ? 
+                      user.createdAt.toDate().toLocaleDateString('ko-KR') :
+                      '-'
+                    }
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {user.suspended ? (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600">
+                        정지됨
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600">
+                        정상
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                    <button
+                      onClick={() => {
+                        setCurrentPage('user-detail');
+                        setSelectedUserId(user.id);
+                      }}
+                      className="px-3 py-1 bg-navy-100 text-navy-700 rounded hover:bg-navy-200 transition-colors font-medium"
+                    >
+                      상세
+                    </button>
+                    <button
+                      onClick={() => handleSuspendUser(user.id, !user.suspended)}
+                      className={`px-3 py-1 rounded transition-colors font-medium ${
+                        user.suspended
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-red-100 text-red-700 hover:bg-red-200'
+                      }`}
+                    >
+                      {user.suspended ? '해제' : '정지'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredUsers.length === 0 && (
+            <div className="text-center text-navy-500 py-12">
+              <p className="text-lg font-medium mb-2">검색 결과가 없습니다</p>
+              <p className="text-sm">다른 검색어를 입력해보세요</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
+    // ========== UserDetail Page ==========
+
+const UserDetail = ({ selectedUserId, setCurrentPage }) => {
+  const id = new URLSearchParams(window.location.search).get('id') || selectedUserId;
+  
+  const db = window.firebaseDb;
+  
+  const [user, setUser] = useState(null);
+  const [stats, setStats] = useState({
+    totalRuns: 0,
+    raceRuns: 0,
+    casualRuns: 0,
+    friends: 0,
+    crews: 0,
+    likes: 0,
+    comments: 0,
+  });
+  const [recentRuns, setRecentRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadUserDetail();
+  }, [id]);
+
+  const loadUserDetail = async () => {
+    try {
+      // 사용자 정보
+      const userDoc = await getDoc(doc(db, 'users', id));
+      if (!userDoc.exists()) {
+        alert('사용자를 찾을 수 없습니다.');
+        setCurrentPage('users');
+        return;
+      }
+      setUser({ id: userDoc.id, ...userDoc.data() });
+
+      // 러닝 기록 통계
+      const runsQuery = query(collection(db, 'runs'), where('userId', '==', id));
+      const runsSnapshot = await getDocs(runsQuery);
+      const runs = runsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // 최근 5개 기록
+      const sortedRuns = runs
+        .sort((a, b) => (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0))
+        .slice(0, 5);
+      setRecentRuns(sortedRuns);
+
+      // 친구 수
+      let friendsCount = 0;
+      try {
+        const friendsQuery = query(collection(db, 'friends'), where('userId', '==', id));
+        const friendsSnapshot = await getDocs(friendsQuery);
+        friendsCount = friendsSnapshot.size;
+      } catch (e) {
+        console.log('친구 컬렉션 없음');
+      }
+
+      // 크루 수
+      let crewsCount = 0;
+      try {
+        const crewMembersQuery = query(collection(db, 'crewMembers'), where('userId', '==', id));
+        const crewMembersSnapshot = await getDocs(crewMembersQuery);
+        crewsCount = crewMembersSnapshot.size;
+      } catch (e) {
+        console.log('크루 컬렉션 없음');
+      }
+
+      // 좋아요/댓글 수
+      let likesCount = 0;
+      let commentsCount = 0;
+      try {
+        const likesQuery = query(collection(db, 'likes'), where('userId', '==', id));
+        const likesSnapshot = await getDocs(likesQuery);
+        likesCount = likesSnapshot.size;
+
+        const commentsQuery = query(collection(db, 'comments'), where('userId', '==', id));
+        const commentsSnapshot = await getDocs(commentsQuery);
+        commentsCount = commentsSnapshot.size;
+      } catch (e) {
+        console.log('좋아요/댓글 컬렉션 없음');
+      }
+
+      setStats({
+        totalRuns: runs.length,
+        raceRuns: runs.filter(r => r.runType === 'race').length,
+        casualRuns: runs.filter(r => r.runType === 'casual').length,
+        friends: friendsCount,
+        crews: crewsCount,
+        likes: likesCount,
+        comments: commentsCount,
+      });
+    } catch (error) {
+      console.error('사용자 상세 로드 실패:', error);
+      alert('사용자 정보를 불러오는데 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">사용자 정보 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => setCurrentPage('users')}
+          className="px-4 py-2 bg-navy-100 text-navy-700 rounded-lg hover:bg-navy-200 transition-colors font-medium"
+        >
+          ← 뒤로
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-navy-900">
+            사용자 상세
+          </h2>
+          <p className="text-navy-600 mt-1">#{user.id.slice(0, 8)}...</p>
+        </div>
+      </div>
+
+      {/* 기본 정보 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-bold text-navy-900 mb-4">📋 기본 정보</h3>
+        <div className="flex items-start gap-6">
+          {user.photoURL ? (
+            <img 
+              src={user.photoURL} 
+              alt={user.nickname}
+              className="w-24 h-24 rounded-full"
+            />
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-navy-200 flex items-center justify-center text-navy-600 text-3xl font-bold">
+              {user.nickname?.[0]?.toUpperCase() || '?'}
+            </div>
+          )}
+          <div className="flex-1 grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-navy-600">닉네임</p>
+              <p className="text-base font-medium text-navy-900">{user.nickname || '-'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-navy-600">이메일</p>
+              <p className="text-base font-medium text-navy-900">{user.email}</p>
+            </div>
+            <div>
+              <p className="text-sm text-navy-600">가입일</p>
+              <p className="text-base font-medium text-navy-900">
+                {user.createdAt?.toDate ? 
+                  user.createdAt.toDate().toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  }) : '-'
+                }
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-navy-600">상태</p>
+              <p className="text-base font-medium text-navy-900">
+                {user.suspended ? (
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-600">
+                    정지됨
+                  </span>
+                ) : (
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-600">
+                    정상
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 활동 통계 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-bold text-navy-900 mb-4">📊 활동 통계</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.totalRuns}</p>
+            <p className="text-sm text-navy-600">총 기록</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.raceRuns}</p>
+            <p className="text-sm text-navy-600">대회 기록</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.casualRuns}</p>
+            <p className="text-sm text-navy-600">일상 기록</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.friends}</p>
+            <p className="text-sm text-navy-600">친구</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.crews}</p>
+            <p className="text-sm text-navy-600">크루</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.likes}</p>
+            <p className="text-sm text-navy-600">좋아요</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-navy-900">{stats.comments}</p>
+            <p className="text-sm text-navy-600">댓글</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 최근 기록 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-bold text-navy-900 mb-4">🏃 최근 기록 (5개)</h3>
+        {recentRuns.length === 0 ? (
+          <p className="text-navy-500 text-center py-8">기록이 없습니다</p>
+        ) : (
+          <div className="space-y-3">
+            {recentRuns.map((run) => (
+              <div key={run.id} className="flex items-center justify-between p-3 border border-navy-100 rounded-lg hover:bg-navy-50 transition-colors">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2 py-0.5 text-xs font-semibold rounded bg-navy-100 text-navy-700">
+                      {run.runType === 'race' ? '대회' : '일상'}
+                    </span>
+                    <p className="text-sm font-medium text-navy-900">
+                      {run.raceName || run.location || '기록'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-navy-600">
+                    <span>{run.distance}km</span>
+                    <span>•</span>
+                    <span>{formatTime(run.time)}</span>
+                    <span>•</span>
+                    <span>
+                      {run.createdAt?.toDate ? 
+                        run.createdAt.toDate().toLocaleDateString('ko-KR') : 
+                        '-'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+    // ========== ContentManagement Page ==========
+
+const ContentManagement = () => {
+  const db = window.firebaseDb;
+  
+  const [runs, setRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState('all'); // all, race, casual
+
+  useEffect(() => {
+    loadRuns();
+  }, []);
+
+  const loadRuns = async () => {
+    try {
+      const runsQuery = query(
+        collection(db, 'runs'),
+        orderBy('createdAt', 'desc'),
+        limit(100) // 최근 100개만
+      );
+      const snapshot = await getDocs(runsQuery);
+      
+      // 사용자 정보도 함께 로드
+      const runsWithUsers = await Promise.all(
+        snapshot.docs.map(async (runDoc) => {
+          const runData = runDoc.data();
+          try {
+            const userDoc = await getDocs(
+              query(collection(db, 'users'), where('__name__', '==', runData.userId))
+            );
+            const userData = userDoc.docs[0]?.data();
+            
+            return {
+              id: runDoc.id,
+              ...runData,
+              userName: userData?.nickname || '알 수 없음',
+            };
+          } catch (e) {
+            return {
+              id: runDoc.id,
+              ...runData,
+              userName: '알 수 없음',
+            };
+          }
+        })
+      );
+      
+      setRuns(runsWithUsers);
+    } catch (error) {
+      console.error('기록 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRun = async (runId) => {
+    if (!confirm('이 기록을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'runs', runId));
+      alert('기록이 삭제되었습니다.');
+      loadRuns();
+    } catch (error) {
+      console.error('기록 삭제 실패:', error);
+      alert('기록 삭제에 실패했습니다.');
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const filteredRuns = runs.filter(run => {
+    if (filterType === 'race') return run.runType === 'race';
+    if (filterType === 'casual') return run.runType === 'casual';
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">콘텐츠 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">콘텐츠 관리</h2>
+        <p className="text-navy-600 mt-1">러닝 기록 관리</p>
+      </div>
+
+      {/* 필터 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilterType('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterType === 'all'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            전체 ({runs.length})
+          </button>
+          <button
+            onClick={() => setFilterType('race')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterType === 'race'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            대회 ({runs.filter(r => r.runType === 'race').length})
+          </button>
+          <button
+            onClick={() => setFilterType('casual')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterType === 'casual'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            일상 ({runs.filter(r => r.runType === 'casual').length})
+          </button>
+        </div>
+      </div>
+
+      {/* 기록 그리드 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredRuns.map((run) => (
+          <div key={run.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {/* 썸네일 */}
+            {run.photos && run.photos.length > 0 ? (
+              <div className="relative aspect-square bg-navy-100">
+                <img
+                  src={run.photos[0]}
+                  alt="Run"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="aspect-square bg-gradient-to-br from-navy-700 to-navy-900 flex items-center justify-center">
+                <span className="text-white text-4xl">🏃</span>
+              </div>
+            )}
+
+            {/* 정보 */}
+            <div className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                  run.runType === 'race' 
+                    ? 'bg-yellow-100 text-yellow-700' 
+                    : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {run.runType === 'race' ? '대회' : '일상'}
+                </span>
+                {run.isPublic === false && (
+                  <span className="px-2 py-0.5 text-xs font-semibold rounded bg-gray-100 text-gray-700">
+                    비공개
+                  </span>
+                )}
+              </div>
+
+              <h3 className="font-bold text-navy-900 mb-1 truncate">
+                {run.raceName || run.location || '기록'}
+              </h3>
+
+              <div className="flex items-center gap-2 text-sm text-navy-600 mb-2">
+                <span>{run.distance}km</span>
+                <span>•</span>
+                <span>{formatTime(run.time)}</span>
+              </div>
+
+              <p className="text-xs text-navy-500 mb-3">
+                {run.userName} • {run.createdAt?.toDate ? 
+                  run.createdAt.toDate().toLocaleDateString('ko-KR') : 
+                  '-'
+                }
+              </p>
+
+              {run.memo && (
+                <p className="text-sm text-navy-700 mb-3 line-clamp-2">
+                  {run.memo}
+                </p>
+              )}
+
+              <button
+                onClick={() => handleDeleteRun(run.id)}
+                className="w-full px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-sm font-medium"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filteredRuns.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+          <p className="text-lg font-medium text-navy-900 mb-2">기록이 없습니다</p>
+          <p className="text-sm text-navy-600">필터를 변경해보세요</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
+    // ========== CrewManagement Page ==========
+
+const CrewManagement = () => {
+  
+  const db = window.firebaseDb;
+  
+  const [crews, setCrews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('all'); // all, pending, active
+
+  useEffect(() => {
+    loadCrews();
+  }, []);
+
+  const loadCrews = async () => {
+    try {
+      const crewsQuery = query(
+        collection(db, 'crews'),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(crewsQuery);
+      
+      // 멤버 수 계산
+      const crewsWithMembers = await Promise.all(
+        snapshot.docs.map(async (crewDoc) => {
+          const crewData = crewDoc.data();
+          
+          // 멤버 수 계산
+          let memberCount = 0;
+          try {
+            const membersQuery = query(
+              collection(db, 'crewMembers'),
+              where('crewId', '==', crewDoc.id)
+            );
+            const membersSnapshot = await getDocs(membersQuery);
+            memberCount = membersSnapshot.size;
+          } catch (e) {
+            console.log('멤버 조회 실패');
+          }
+
+          // 관리자 정보
+          let ownerName = '알 수 없음';
+          try {
+            const ownerDoc = await getDocs(
+              query(collection(db, 'users'), where('__name__', '==', crewData.ownerId))
+            );
+            ownerName = ownerDoc.docs[0]?.data()?.nickname || '알 수 없음';
+          } catch (e) {
+            console.log('관리자 조회 실패');
+          }
+
+          return {
+            id: crewDoc.id,
+            ...crewData,
+            memberCount,
+            ownerName,
+          };
+        })
+      );
+      
+      setCrews(crewsWithMembers);
+    } catch (error) {
+      console.error('크루 로드 실패:', error);
+      // 크루 컬렉션이 없을 수 있음
+      setCrews([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveCrew = async (crewId, approve) => {
+    const action = approve ? '승인' : '거부';
+    if (!confirm(`이 크루를 ${action}하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      if (approve) {
+        await updateDoc(doc(db, 'crews', crewId), {
+          status: 'approved',
+          approvedAt: new Date()
+        });
+        alert('크루가 승인되었습니다.');
+      } else {
+        await deleteDoc(doc(db, 'crews', crewId));
+        alert('크루가 거부되었습니다.');
+      }
+      loadCrews();
+    } catch (error) {
+      console.error('크루 승인 실패:', error);
+      alert('오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeleteCrew = async (crewId) => {
+    if (!confirm('이 크루를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'crews', crewId));
+      
+      // 크루 멤버도 삭제
+      const membersQuery = query(
+        collection(db, 'crewMembers'),
+        where('crewId', '==', crewId)
+      );
+      const membersSnapshot = await getDocs(membersQuery);
+      await Promise.all(
+        membersSnapshot.docs.map(doc => deleteDoc(doc.ref))
+      );
+      
+      alert('크루가 삭제되었습니다.');
+      loadCrews();
+    } catch (error) {
+      console.error('크루 삭제 실패:', error);
+      alert('크루 삭제에 실패했습니다.');
+    }
+  };
+
+  const filteredCrews = crews.filter(crew => {
+    if (filterStatus === 'pending') return crew.status === 'pending';
+    if (filterStatus === 'active') return crew.status !== 'pending';
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">크루 목록 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">크루 관리</h2>
+        <p className="text-navy-600 mt-1">전체 {crews.length}개</p>
+      </div>
+
+      {/* 필터 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'all'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            전체 ({crews.length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('pending')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'pending'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            승인 대기 ({crews.filter(c => c.status === 'pending').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('active')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'active'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            활성 ({crews.filter(c => c.status !== 'pending').length})
+          </button>
+        </div>
+      </div>
+
+      {/* 크루 목록 */}
+      <div className="space-y-4">
+        {filteredCrews.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+            <p className="text-lg font-medium text-navy-900 mb-2">크루가 없습니다</p>
+            <p className="text-sm text-navy-600">
+              {crews.length === 0 
+                ? '아직 생성된 크루가 없습니다' 
+                : '필터를 변경해보세요'
+              }
+            </p>
+          </div>
+        ) : (
+          filteredCrews.map((crew) => (
+            <div key={crew.id} className="bg-white rounded-xl shadow-sm p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-bold text-navy-900">
+                      {crew.name}
+                    </h3>
+                    {crew.status === 'pending' && (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">
+                        승인 대기
+                      </span>
+                    )}
+                    {crew.isPublic && (
+                      <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">
+                        공개
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-navy-600 mb-3">
+                    {crew.description || '설명 없음'}
+                  </p>
+
+                  <div className="flex items-center gap-4 text-sm text-navy-500">
+                    <span>👥 {crew.memberCount}명</span>
+                    <span>•</span>
+                    <span>👤 관리자: {crew.ownerName}</span>
+                    <span>•</span>
+                    <span>
+                      생성일: {crew.createdAt?.toDate ? 
+                        crew.createdAt.toDate().toLocaleDateString('ko-KR') : 
+                        '-'
+                      }
+                    </span>
+                  </div>
+
+                  {crew.location && (
+                    <p className="text-xs text-navy-400 mt-2">
+                      📍 {crew.location}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 ml-4">
+                  {crew.status === 'pending' ? (
+                    <>
+                      <button
+                        onClick={() => handleApproveCrew(crew.id, true)}
+                        className="px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors font-medium text-sm"
+                      >
+                        승인
+                      </button>
+                      <button
+                        onClick={() => handleApproveCrew(crew.id, false)}
+                        className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium text-sm"
+                      >
+                        거부
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleDeleteCrew(crew.id)}
+                      className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium text-sm"
+                    >
+                      삭제
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+    // ========== ReportManagement Page ==========
+
+const ReportManagement = () => {
+  const db = window.firebaseDb;
+  const auth = window.firebaseAuth;
+  
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('pending'); // pending, processing, resolved, dismissed
+  const [selectedReport, setSelectedReport] = useState(null);
+
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+  const loadReports = async () => {
+    try {
+      const reportsQuery = query(
+        collection(db, 'reports'),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(reportsQuery);
+      
+      // 사용자 정보 추가
+      const reportsWithUsers = await Promise.all(
+        snapshot.docs.map(async (reportDoc) => {
+          const reportData = reportDoc.data();
+          
+          // 신고자 정보
+          let reporterName = '알 수 없음';
+          try {
+            const reporterDoc = await getDocs(
+              query(collection(db, 'users'), where('__name__', '==', reportData.reporterId))
+            );
+            reporterName = reporterDoc.docs[0]?.data()?.nickname || '알 수 없음';
+          } catch (e) {}
+
+          // 대상 사용자 정보
+          let targetUserName = '알 수 없음';
+          try {
+            const targetUserDoc = await getDocs(
+              query(collection(db, 'users'), where('__name__', '==', reportData.targetUserId))
+            );
+            targetUserName = targetUserDoc.docs[0]?.data()?.nickname || '알 수 없음';
+          } catch (e) {}
+
+          return {
+            id: reportDoc.id,
+            ...reportData,
+            reporterName,
+            targetUserName,
+          };
+        })
+      );
+      
+      setReports(reportsWithUsers);
+    } catch (error) {
+      console.error('신고 로드 실패:', error);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (reportId, status, action) => {
+    if (!confirm(`이 신고를 ${action}하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'reports', reportId), {
+        status,
+        resolvedAt: Timestamp.now(),
+        resolvedBy: auth.currentUser?.uid || 'unknown'
+      });
+      
+      alert(`신고가 ${action}되었습니다.`);
+      setSelectedReport(null);
+      loadReports();
+    } catch (error) {
+      console.error('신고 처리 실패:', error);
+      alert('오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeleteContent = async (report) => {
+    if (!confirm('신고된 콘텐츠를 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      // 콘텐츠 삭제
+      if (report.type === 'run') {
+        await deleteDoc(doc(db, 'runs', report.targetId));
+      } else if (report.type === 'comment') {
+        await deleteDoc(doc(db, 'comments', report.targetId));
+      } else if (report.type === 'post') {
+        await deleteDoc(doc(db, 'crewPosts', report.targetId));
+      }
+
+      // 신고 상태 업데이트
+      await updateDoc(doc(db, 'reports', report.id), {
+        status: 'resolved',
+        resolvedAt: Timestamp.now(),
+        resolvedBy: auth.currentUser?.uid || 'unknown',
+        adminNote: '콘텐츠 삭제됨'
+      });
+
+      alert('콘텐츠가 삭제되었습니다.');
+      setSelectedReport(null);
+      loadReports();
+    } catch (error) {
+      console.error('콘텐츠 삭제 실패:', error);
+      alert('콘텐츠 삭제에 실패했습니다.');
+    }
+  };
+
+  const getCategoryLabel = (category) => {
+    const labels = {
+      spam: '스팸',
+      inappropriate: '부적절한 내용',
+      harassment: '괴롭힘',
+      other: '기타'
+    };
+    return labels[category] || category;
+  };
+
+  const getTypeLabel = (type) => {
+    const labels = {
+      run: '러닝 기록',
+      comment: '댓글',
+      post: '게시글',
+      user: '사용자'
+    };
+    return labels[type] || type;
+  };
+
+  const filteredReports = reports.filter(report => {
+    if (filterStatus === 'all') return true;
+    return report.status === filterStatus;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">신고 목록 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">신고 관리</h2>
+        <p className="text-navy-600 mt-1">전체 {reports.length}건</p>
+      </div>
+
+      {/* 필터 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'all'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            전체 ({reports.length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('pending')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'pending'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            미처리 ({reports.filter(r => r.status === 'pending').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('processing')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'processing'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            처리중 ({reports.filter(r => r.status === 'processing').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('resolved')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'resolved'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            완료 ({reports.filter(r => r.status === 'resolved').length})
+          </button>
+          <button
+            onClick={() => setFilterStatus('dismissed')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === 'dismissed'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            무시됨 ({reports.filter(r => r.status === 'dismissed').length})
+          </button>
+        </div>
+      </div>
+
+      {/* 신고 목록 */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-navy-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">유형</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">카테고리</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">대상</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">신고자</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">일시</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">상태</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-navy-700 uppercase">작업</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-navy-100">
+            {filteredReports.map((report) => (
+              <tr key={report.id} className="hover:bg-navy-50">
+                <td className="px-6 py-4 text-sm text-navy-900">
+                  {getTypeLabel(report.type)}
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">
+                    {getCategoryLabel(report.category)}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-navy-600">
+                  {report.targetUserName}
+                </td>
+                <td className="px-6 py-4 text-sm text-navy-600">
+                  {report.reporterName}
+                </td>
+                <td className="px-6 py-4 text-sm text-navy-500">
+                  {report.createdAt?.toDate ? 
+                    report.createdAt.toDate().toLocaleDateString('ko-KR') : 
+                    '-'
+                  }
+                </td>
+                <td className="px-6 py-4">
+                  {report.status === 'pending' && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">
+                      미처리
+                    </span>
+                  )}
+                  {report.status === 'processing' && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">
+                      처리중
+                    </span>
+                  )}
+                  {report.status === 'resolved' && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                      완료
+                    </span>
+                  )}
+                  {report.status === 'dismissed' && (
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">
+                      무시됨
+                    </span>
+                  )}
+                </td>
+                <td className="px-6 py-4 text-sm">
+                  <button
+                    onClick={() => setSelectedReport(report)}
+                    className="px-3 py-1 bg-navy-100 text-navy-700 rounded hover:bg-navy-200 transition-colors font-medium"
+                  >
+                    상세
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {filteredReports.length === 0 && (
+          <div className="text-center text-navy-500 py-12">
+            <p className="text-lg font-medium mb-2">신고가 없습니다</p>
+            <p className="text-sm">
+              {reports.length === 0 
+                ? '아직 신고가 없습니다' 
+                : '필터를 변경해보세요'
+              }
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* 신고 상세 모달 */}
+      {selectedReport && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-navy-100">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-navy-900">신고 상세</h3>
+                <button
+                  onClick={() => setSelectedReport(null)}
+                  className="text-navy-400 hover:text-navy-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* 신고 정보 */}
+              <div>
+                <h4 className="font-semibold text-navy-900 mb-2">📋 신고 정보</h4>
+                <div className="bg-navy-50 rounded-lg p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-navy-600 w-24">유형:</span>
+                    <span className="text-sm font-medium text-navy-900">
+                      {getTypeLabel(selectedReport.type)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-navy-600 w-24">카테고리:</span>
+                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">
+                      {getCategoryLabel(selectedReport.category)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-navy-600 w-24">신고자:</span>
+                    <span className="text-sm font-medium text-navy-900">
+                      {selectedReport.reporterName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-navy-600 w-24">대상 사용자:</span>
+                    <span className="text-sm font-medium text-navy-900">
+                      {selectedReport.targetUserName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-navy-600 w-24">일시:</span>
+                    <span className="text-sm text-navy-900">
+                      {selectedReport.createdAt?.toDate ? 
+                        selectedReport.createdAt.toDate().toLocaleString('ko-KR') : 
+                        '-'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 신고 사유 */}
+              <div>
+                <h4 className="font-semibold text-navy-900 mb-2">💬 신고 사유</h4>
+                <div className="bg-navy-50 rounded-lg p-4">
+                  <p className="text-sm text-navy-700">
+                    {selectedReport.reason || '사유가 입력되지 않았습니다.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 조치 */}
+              {selectedReport.status === 'pending' && (
+                <div>
+                  <h4 className="font-semibold text-navy-900 mb-2">⚙️ 조치</h4>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleUpdateStatus(selectedReport.id, 'processing', '처리중으로 변경')}
+                      className="flex-1 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors font-medium"
+                    >
+                      처리중
+                    </button>
+                    <button
+                      onClick={() => handleDeleteContent(selectedReport)}
+                      className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium"
+                    >
+                      콘텐츠 삭제
+                    </button>
+                    <button
+                      onClick={() => handleUpdateStatus(selectedReport.id, 'dismissed', '무시')}
+                      className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                    >
+                      무시
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedReport.status !== 'pending' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800 font-medium">
+                    ✓ 이 신고는 처리되었습니다
+                  </p>
+                  {selectedReport.adminNote && (
+                    <p className="text-xs text-green-700 mt-1">
+                      메모: {selectedReport.adminNote}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
+    // ========== Statistics Page ==========
+
+const Statistics = () => {
+  const db = window.firebaseDb;
+  
+  const [period, setPeriod] = useState('30'); // 7, 30, 90, all
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    newUsers: 0,
+    totalRuns: 0,
+    newRuns: 0,
+    totalCrews: 0,
+    popularRaces: [],
+    activityByDay: [],
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadStatistics();
+  }, [period]);
+
+  const loadStatistics = async () => {
+    try {
+      // 기간 계산
+      const now = new Date();
+      const periodDays = period === 'all' ? 999999 : parseInt(period);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - periodDays);
+
+      // 전체 사용자
+      const allUsersSnapshot = await getDocs(collection(db, 'users'));
+      const totalUsers = allUsersSnapshot.size;
+
+      // 기간 내 신규 사용자
+      const newUsersQuery = query(
+        collection(db, 'users'),
+        where('createdAt', '>=', Timestamp.fromDate(startDate))
+      );
+      const newUsersSnapshot = await getDocs(newUsersQuery);
+      const newUsers = newUsersSnapshot.size;
+
+      // 전체 기록
+      const allRunsSnapshot = await getDocs(collection(db, 'runs'));
+      const totalRuns = allRunsSnapshot.size;
+      const allRuns = allRunsSnapshot.docs.map(doc => doc.data());
+
+      // 기간 내 신규 기록
+      const newRunsQuery = query(
+        collection(db, 'runs'),
+        where('createdAt', '>=', Timestamp.fromDate(startDate))
+      );
+      const newRunsSnapshot = await getDocs(newRunsQuery);
+      const newRuns = newRunsSnapshot.size;
+
+      // 크루 수
+      let totalCrews = 0;
+      try {
+        const crewsSnapshot = await getDocs(collection(db, 'crews'));
+        totalCrews = crewsSnapshot.size;
+      } catch (e) {}
+
+      // 인기 대회 TOP 10
+      const raceRuns = allRuns.filter(run => run.runType === 'race' && run.raceName);
+      const raceCounts = {};
+      raceRuns.forEach(run => {
+        raceCounts[run.raceName] = (raceCounts[run.raceName] || 0) + 1;
+      });
+      const popularRaces = Object.entries(raceCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      // 일별 활동 (최근 30일)
+      const activityByDay = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        date.setHours(0, 0, 0, 0);
+        
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+
+        const dayRuns = allRuns.filter(run => {
+          const runDate = run.createdAt?.toDate();
+          return runDate && runDate >= date && runDate < nextDate;
+        });
+
+        activityByDay.push({
+          date: date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }),
+          count: dayRuns.length
+        });
+      }
+
+      setStats({
+        totalUsers,
+        newUsers,
+        totalRuns,
+        newRuns,
+        totalCrews,
+        popularRaces,
+        activityByDay,
+      });
+    } catch (error) {
+      console.error('통계 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // CSV 데이터 준비
+  const csvData = [
+    ['항목', '값'],
+    ['전체 사용자', stats.totalUsers],
+    ['신규 사용자', stats.newUsers],
+    ['전체 기록', stats.totalRuns],
+    ['신규 기록', stats.newRuns],
+    ['전체 크루', stats.totalCrews],
+    [],
+    ['인기 대회 TOP 10'],
+    ['순위', '대회명', '기록 수'],
+    ...stats.popularRaces.map((race, idx) => [idx + 1, race.name, race.count])
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+          <p className="text-navy-600">통계 데이터 로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-navy-900">통계</h2>
+          <p className="text-navy-600 mt-1">RunLog 활동 통계</p>
+        </div>
+        <button
+          onClick={() => {
+            const csvContent = csvData.map(row => row.join(',')).join('\n');
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `runlog-statistics-${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+          }}
+          className="px-4 py-2 bg-navy-700 text-white rounded-lg hover:bg-navy-800 transition-colors font-medium"
+        >
+          CSV 다운로드
+        </button>
+      </div>
+
+      {/* 기간 선택 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPeriod('7')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              period === '7'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            최근 7일
+          </button>
+          <button
+            onClick={() => setPeriod('30')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              period === '30'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            최근 30일
+          </button>
+          <button
+            onClick={() => setPeriod('90')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              period === '90'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            최근 90일
+          </button>
+          <button
+            onClick={() => setPeriod('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              period === 'all'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            전체
+          </button>
+        </div>
+      </div>
+
+      {/* 주요 통계 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <p className="text-sm text-navy-600 mb-1">전체 사용자</p>
+          <h3 className="text-3xl font-bold text-navy-900 mb-2">
+            {stats.totalUsers.toLocaleString()}
+          </h3>
+          <p className="text-xs text-green-600 font-semibold">
+            +{stats.newUsers} (기간 내)
+          </p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <p className="text-sm text-navy-600 mb-1">전체 기록</p>
+          <h3 className="text-3xl font-bold text-navy-900 mb-2">
+            {stats.totalRuns.toLocaleString()}
+          </h3>
+          <p className="text-xs text-green-600 font-semibold">
+            +{stats.newRuns} (기간 내)
+          </p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <p className="text-sm text-navy-600 mb-1">평균 기록/사용자</p>
+          <h3 className="text-3xl font-bold text-navy-900 mb-2">
+            {stats.totalUsers > 0 
+              ? (stats.totalRuns / stats.totalUsers).toFixed(1)
+              : '0'
+            }
+          </h3>
+          <p className="text-xs text-navy-500">개</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <p className="text-sm text-navy-600 mb-1">전체 크루</p>
+          <h3 className="text-3xl font-bold text-navy-900 mb-2">
+            {stats.totalCrews.toLocaleString()}
+          </h3>
+          <p className="text-xs text-navy-500">개</p>
+        </div>
+      </div>
+
+      {/* 일별 활동 차트 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-bold text-navy-900 mb-4">📈 일별 기록 추가 (최근 30일)</h3>
+        <div className="h-64 flex items-end gap-1">
+          {stats.activityByDay.map((day, idx) => {
+            const maxCount = Math.max(...stats.activityByDay.map(d => d.count), 1);
+            const height = (day.count / maxCount) * 100;
+            
+            return (
+              <div key={idx} className="flex-1 flex flex-col items-center">
+                <div
+                  className="w-full bg-navy-700 rounded-t transition-all hover:bg-navy-600"
+                  style={{ height: `${height}%`, minHeight: day.count > 0 ? '4px' : '0' }}
+                  title={`${day.date}: ${day.count}개`}
+                />
+                {idx % 5 === 0 && (
+                  <p className="text-xs text-navy-500 mt-2 rotate-45 origin-left">
+                    {day.date}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 인기 대회 */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-bold text-navy-900 mb-4">🏆 인기 대회 TOP 10</h3>
+        {stats.popularRaces.length === 0 ? (
+          <p className="text-center text-navy-500 py-8">데이터가 없습니다</p>
+        ) : (
+          <div className="space-y-3">
+            {stats.popularRaces.map((race, idx) => (
+              <div key={idx} className="flex items-center gap-4">
+                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-white ${
+                  idx === 0 ? 'bg-yellow-500' :
+                  idx === 1 ? 'bg-gray-400' :
+                  idx === 2 ? 'bg-orange-600' :
+                  'bg-navy-700'
+                }`}>
+                  {idx + 1}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-navy-900">{race.name}</p>
+                  <div className="w-full bg-navy-100 rounded-full h-2 mt-1">
+                    <div
+                      className="bg-navy-700 h-2 rounded-full transition-all"
+                      style={{ 
+                        width: `${(race.count / stats.popularRaces[0].count) * 100}%` 
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-navy-900">{race.count}</p>
+                  <p className="text-xs text-navy-500">기록</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+    // ========== Settings Page ==========
+
+const Settings = () => {
+  const db = window.firebaseDb;
+  
+  const [activeTab, setActiveTab] = useState('notices'); // notices, races
+  const [loading, setLoading] = useState(false);
+
+  // 공지사항
+  const [notices, setNotices] = useState([]);
+  const [newNotice, setNewNotice] = useState({ title: '', content: '' });
+  const [editingNotice, setEditingNotice] = useState(null);
+
+  // 대회 데이터
+  const [races, setRaces] = useState([]);
+  const [newRace, setNewRace] = useState({ name: '', date: '' });
+
+  useEffect(() => {
+    if (activeTab === 'notices') {
+      loadNotices();
+    } else if (activeTab === 'races') {
+      loadRaces();
+    }
+  }, [activeTab]);
+
+  const loadNotices = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'notices'));
+      const noticesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setNotices(noticesData.sort((a, b) => 
+        (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0)
+      ));
+    } catch (error) {
+      console.error('공지사항 로드 실패:', error);
+      setNotices([]);
+    }
+  };
+
+  const loadRaces = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'raceData'));
+      const racesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setRaces(racesData.sort((a, b) => 
+        new Date(b.date) - new Date(a.date)
+      ));
+    } catch (error) {
+      console.error('대회 데이터 로드 실패:', error);
+      setRaces([]);
+    }
+  };
+
+  const handleAddNotice = async (e) => {
+    e.preventDefault();
+    if (!newNotice.title.trim() || !newNotice.content.trim()) {
+      alert('제목과 내용을 모두 입력해주세요.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const noticeRef = doc(collection(db, 'notices'));
+      await setDoc(noticeRef, {
+        title: newNotice.title,
+        content: newNotice.content,
+        createdAt: Timestamp.now(),
+        active: true
+      });
+
+      alert('공지사항이 추가되었습니다.');
+      setNewNotice({ title: '', content: '' });
+      loadNotices();
+    } catch (error) {
+      console.error('공지사항 추가 실패:', error);
+      alert('공지사항 추가에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteNotice = async (noticeId) => {
+    if (!confirm('이 공지사항을 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'notices', noticeId));
+      alert('공지사항이 삭제되었습니다.');
+      loadNotices();
+    } catch (error) {
+      console.error('공지사항 삭제 실패:', error);
+      alert('공지사항 삭제에 실패했습니다.');
+    }
+  };
+
+  const handleAddRace = async (e) => {
+    e.preventDefault();
+    if (!newRace.name.trim() || !newRace.date) {
+      alert('대회명과 날짜를 모두 입력해주세요.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const raceRef = doc(collection(db, 'raceData'));
+      await setDoc(raceRef, {
+        name: newRace.name,
+        date: newRace.date,
+        createdAt: Timestamp.now()
+      });
+
+      alert('대회가 추가되었습니다.');
+      setNewRace({ name: '', date: '' });
+      loadRaces();
+    } catch (error) {
+      console.error('대회 추가 실패:', error);
+      alert('대회 추가에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRace = async (raceId) => {
+    if (!confirm('이 대회를 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'raceData', raceId));
+      alert('대회가 삭제되었습니다.');
+      loadRaces();
+    } catch (error) {
+      console.error('대회 삭제 실패:', error);
+      alert('대회 삭제에 실패했습니다.');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">설정</h2>
+        <p className="text-navy-600 mt-1">앱 설정 관리</p>
+      </div>
+
+      {/* 탭 */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('notices')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'notices'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            📢 공지사항
+          </button>
+          <button
+            onClick={() => setActiveTab('races')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'races'
+                ? 'bg-navy-700 text-white'
+                : 'bg-navy-100 text-navy-700 hover:bg-navy-200'
+            }`}
+          >
+            🏆 대회 데이터
+          </button>
+        </div>
+      </div>
+
+      {/* 공지사항 탭 */}
+      {activeTab === 'notices' && (
+        <div className="space-y-6">
+          {/* 공지사항 추가 */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="text-lg font-bold text-navy-900 mb-4">새 공지사항 추가</h3>
+            <form onSubmit={handleAddNotice} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-navy-700 mb-2">
+                  제목
+                </label>
+                <input
+                  type="text"
+                  value={newNotice.title}
+                  onChange={(e) => setNewNotice({ ...newNotice, title: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none"
+                  placeholder="공지사항 제목"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-navy-700 mb-2">
+                  내용
+                </label>
+                <textarea
+                  value={newNotice.content}
+                  onChange={(e) => setNewNotice({ ...newNotice, content: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none"
+                  rows="4"
+                  placeholder="공지사항 내용"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full px-4 py-2 bg-navy-700 text-white rounded-lg hover:bg-navy-800 transition-colors font-medium disabled:opacity-50"
+              >
+                {loading ? '추가 중...' : '공지사항 추가'}
+              </button>
+            </form>
+          </div>
+
+          {/* 공지사항 목록 */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="text-lg font-bold text-navy-900 mb-4">
+              공지사항 목록 ({notices.length}개)
+            </h3>
+            {notices.length === 0 ? (
+              <p className="text-center text-navy-500 py-8">공지사항이 없습니다</p>
+            ) : (
+              <div className="space-y-3">
+                {notices.map((notice) => (
+                  <div key={notice.id} className="border border-navy-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="font-bold text-navy-900">{notice.title}</h4>
+                      <button
+                        onClick={() => handleDeleteNotice(notice.id)}
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                    <p className="text-sm text-navy-700 mb-2">{notice.content}</p>
+                    <p className="text-xs text-navy-500">
+                      {notice.createdAt?.toDate ? 
+                        notice.createdAt.toDate().toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        }) : 
+                        '-'
+                      }
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 대회 데이터 탭 */}
+      {activeTab === 'races' && (
+        <div className="space-y-6">
+          {/* 대회 추가 */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="text-lg font-bold text-navy-900 mb-4">새 대회 추가</h3>
+            <form onSubmit={handleAddRace} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-navy-700 mb-2">
+                  대회명
+                </label>
+                <input
+                  type="text"
+                  value={newRace.name}
+                  onChange={(e) => setNewRace({ ...newRace, name: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none"
+                  placeholder="예: 서울국제마라톤"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-navy-700 mb-2">
+                  날짜
+                </label>
+                <input
+                  type="date"
+                  value={newRace.date}
+                  onChange={(e) => setNewRace({ ...newRace, date: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-navy-200 rounded-lg focus:border-navy-600 focus:outline-none"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full px-4 py-2 bg-navy-700 text-white rounded-lg hover:bg-navy-800 transition-colors font-medium disabled:opacity-50"
+              >
+                {loading ? '추가 중...' : '대회 추가'}
+              </button>
+            </form>
+          </div>
+
+          {/* 대회 목록 */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h3 className="text-lg font-bold text-navy-900 mb-4">
+              대회 목록 ({races.length}개)
+            </h3>
+            {races.length === 0 ? (
+              <p className="text-center text-navy-500 py-8">등록된 대회가 없습니다</p>
+            ) : (
+              <div className="space-y-2">
+                {races.map((race) => (
+                  <div key={race.id} className="flex items-center justify-between p-3 border border-navy-200 rounded-lg hover:bg-navy-50 transition-colors">
+                    <div>
+                      <p className="font-medium text-navy-900">{race.name}</p>
+                      <p className="text-sm text-navy-600">{race.date}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteRace(race.id)}
+                      className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm font-medium"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
+    // ========== Admin App Component ==========
+    const AdminApp = () => {
+      const [currentPage, setCurrentPage] = useState('dashboard');
+      const [selectedUserId, setSelectedUserId] = useState(null);
+      const { isAdmin, loading } = useAdminAuth();
+
+      if (loading) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-navy-50">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-navy-700 border-t-transparent mb-4"></div>
+              <p className="text-navy-600">권한 확인 중...</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (!isAdmin) {
+        window.location.href = '/';
+        return null;
+      }
+
+      const renderPage = () => {
+        if (currentPage === 'dashboard') return <AdminDashboard setCurrentPage={setCurrentPage} />;
+        if (currentPage === 'users') return <UserManagement setCurrentPage={setCurrentPage} setSelectedUserId={setSelectedUserId} />;
+        if (currentPage === 'user-detail') return <UserDetail selectedUserId={selectedUserId} setCurrentPage={setCurrentPage} />;
+        if (currentPage === 'content') return <ContentManagement />;
+        if (currentPage === 'crews') return <CrewManagement />;
+        if (currentPage === 'reports') return <ReportManagement />;
+        if (currentPage === 'statistics') return <Statistics />;
+        if (currentPage === 'settings') return <Settings />;
+        return <AdminDashboard setCurrentPage={setCurrentPage} />;
+      };
+
+      return (
+        <div className="min-h-screen bg-navy-50">
+          <header className="bg-white shadow-sm sticky top-0 z-30">
+            <div className="px-6 py-4 flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-navy-900">🏃 RunLog Admin</h1>
+                <p className="text-sm text-navy-600 mt-1">관리자 대시보드</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => window.location.href = '/'}
+                  className="px-4 py-2 text-navy-700 hover:bg-navy-100 rounded-lg transition-colors"
+                >
+                  메인으로
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm('로그아웃하시겠습니까?')) {
+                      return;
+                    }
+                    
+                    try {
+                      await signOut(auth);
+                      window.location.href = '/';
+                    } catch (error) {
+                      console.error('로그아웃 실패:', error);
+                    }
+                  }}
+                  className="px-4 py-2 bg-navy-700 text-white rounded-lg hover:bg-navy-800 transition-colors"
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex">
+            <AdminSidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
+            <main className="flex-1 p-6">
+              {renderPage()}
+            </main>
+          </div>
+        </div>
+      );
+    };
+
+    // ========== Render App ==========
+    const root = ReactDOM.createRoot(document.getElementById('admin-root'));
+    root.render(<AdminApp />);
+  </script>
+</body>
+</html>
