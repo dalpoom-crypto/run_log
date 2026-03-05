@@ -34,8 +34,6 @@ export {
   deleteUser,
   GoogleAuthProvider,
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
 } from 'firebase/auth';
 
 export {

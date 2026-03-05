@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   updateProfile,
   sendPasswordResetEmail,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
 } from '../config/firebase';
 import { auth, db, doc, getDoc, setDoc, Timestamp } from '../config/firebase';
 import { showToast } from '../utils/toast';
@@ -215,47 +214,56 @@ const AuthForm = ({ onAuthSuccess }) => {
     }
   };
 
-  // 구글 리디렉트 로그인 후 돌아왔을 때 결과 처리
-  useEffect(() => {
-    let cancelled = false;
-    getRedirectResult(auth)
-      .then(async (userCredential) => {
-        if (cancelled || !userCredential?.user) return;
-        const { user } = userCredential;
-        const userDocRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userDocRef);
-        if (!userSnap.exists()) {
-          const baseNickname = (user.displayName || user.email?.split('@')[0] || 'User').trim().slice(0, 20) || 'User';
-          let nickname = baseNickname;
-          const exists = await checkNicknameExists(nickname);
-          if (exists) nickname = `${baseNickname}_${user.uid.slice(0, 6)}`;
-          await setDoc(userDocRef, {
-            nickname,
-            email: user.email ?? '',
-            photoURL: user.photoURL ?? null,
-            createdAt: Timestamp.now(),
-          });
-          await updateProfile(user, { displayName: nickname });
-        }
-        onAuthSuccess();
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        if (err.code === 'auth/account-exists-with-different-credential') {
-          setError('이미 같은 이메일로 가입된 계정이 있습니다. 이메일/비밀번호로 로그인해 주세요.');
-        } else {
-          setError(err.message || '구글 로그인에 실패했습니다. 다시 시도해 주세요.');
-        }
-      });
-    return () => { cancelled = true; };
-  }, [onAuthSuccess]);
-
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
-    const provider = new GoogleAuthProvider();
-    signInWithRedirect(auth, provider);
-    // 페이지가 구글 로그인으로 이동하므로 여기서 더 이상 처리하지 않음
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const { user } = userCredential;
+
+      const userDocRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userDocRef);
+
+      if (!userSnap.exists()) {
+        const baseNickname =
+          (user.displayName || user.email?.split('@')[0] || 'User')
+            .trim()
+            .slice(0, 20) || 'User';
+
+        let nickname = baseNickname;
+        const exists = await checkNicknameExists(nickname);
+        if (exists) {
+          nickname = `${baseNickname}_${user.uid.slice(0, 6)}`;
+        }
+
+        await setDoc(userDocRef, {
+          nickname,
+          email: user.email ?? '',
+          photoURL: user.photoURL ?? null,
+          createdAt: Timestamp.now(),
+        });
+
+        await updateProfile(user, { displayName: nickname });
+      }
+
+      onAuthSuccess();
+    } catch (err) {
+      if (
+        err.code === 'auth/popup-closed-by-user' ||
+        err.code === 'auth/cancelled-popup-request'
+      ) {
+        setError('');
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+        setError(
+          '이미 같은 이메일로 가입된 계정이 있습니다. 이메일/비밀번호로 로그인해 주세요.',
+        );
+      } else {
+        setError(err.message || '구글 로그인에 실패했습니다. 다시 시도해 주세요.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePasswordReset = async (e) => {

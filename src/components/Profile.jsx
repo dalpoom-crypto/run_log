@@ -1671,7 +1671,9 @@ const Profile = ({ user, userData, runs, relationshipData, currentUser, onViewUs
                                   className="w-full h-full object-cover"
                                 />
                               ) : (
-                                <span className="text-2xl text-navy-400">🏃</span>
+                                <div className="w-10 h-10 rounded-full bg-navy-100 flex items-center justify-center text-xl text-navy-500">
+                                  🏃
+                                </div>
                               )}
                             </div>
 

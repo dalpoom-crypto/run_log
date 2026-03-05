@@ -59,13 +59,17 @@ const RunCard = ({ run, onClick, compactOverlay = false }) => {
 
           {/* 해외 러닝 지구본 / 대회 트로피 */}
           {run.isOverseas ? (
-            <div className="absolute top-3 left-3 text-2xl sm:text-3xl z-10 drop-shadow-lg">
-              🌍
+            <div className="absolute top-3 left-3 z-10">
+              <div className="w-9 h-9 rounded-full bg-black bg-opacity-50 flex items-center justify-center text-lg text-white backdrop-blur-sm">
+                🌍
+              </div>
             </div>
           ) : (
             run.runType === 'race' && (
-              <div className="absolute top-3 left-3 text-2xl sm:text-3xl z-10 drop-shadow-lg">
-                🏆
+              <div className="absolute top-3 left-3 z-10">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-amber-400 flex items-center justify-center text-lg text-white shadow-lg">
+                  🏅
+                </div>
               </div>
             )
           )}
@@ -114,13 +118,17 @@ const RunCard = ({ run, onClick, compactOverlay = false }) => {
         }`}>
           {/* 해외 러닝 지구본 / 대회 트로피 */}
           {run.isOverseas ? (
-            <div className="absolute top-3 left-3 text-2xl sm:text-3xl">
-              🌍
+            <div className="absolute top-3 left-3">
+              <div className="w-9 h-9 rounded-full bg-black bg-opacity-40 flex items-center justify-center text-lg text-white">
+                🌍
+              </div>
             </div>
           ) : (
             run.runType === 'race' && (
-              <div className="absolute top-3 left-3 text-2xl sm:text-3xl">
-                🏆
+              <div className="absolute top-3 left-3">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-amber-400 flex items-center justify-center text-lg text-white shadow">
+                  🏅
+                </div>
               </div>
             )
           )}

@@ -38,7 +38,20 @@ const PersonalRecords = ({ runs }) => {
         justifyContent: 'center',
         textAlign: 'center'
       }}>
-        <div style={{ fontSize: '1.9rem', lineHeight: 1, marginBottom: '6px' }}>🏆</div>
+        <div style={{ marginBottom: '6px' }}>
+          <div style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '999px',
+            background: 'linear-gradient(135deg, #f97316, #facc15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto'
+          }}>
+            <span style={{ fontSize: '1.5rem' }}>🏅</span>
+          </div>
+        </div>
         <h2 style={{ fontSize: '1.05rem', fontWeight: 'bold', marginBottom: '4px' }}>개인 최고 기록</h2>
         <p style={{ fontSize: '0.8rem', opacity: 0.9 }}>첫 기록을 추가해보세요!</p>
       </div>

@@ -492,7 +492,11 @@ const Feed = ({ user, userData, onShowSettings, onEditRun, showOwnOnly = true, v
         </div>
       ) : runs.length === 0 && !viewingUserId ? (
         <div className="text-center py-16 bg-white rounded-xl shadow-sm">
-          <div className="text-6xl mb-4">🏃</div>
+          <div className="flex justify-center mb-4">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-navy-600 to-navy-800 flex items-center justify-center text-3xl text-white shadow-lg">
+              🏃
+            </div>
+          </div>
           <h3 className="text-xl font-bold text-navy-900 mb-2">아직 기록이 없습니다</h3>
           <p className="text-sm text-navy-600">첫 번째 달리기 기록을 추가해보세요!</p>
         </div>

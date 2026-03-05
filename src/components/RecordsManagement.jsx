@@ -87,7 +87,9 @@ const RecordsManagement = ({ user }) => {
               </div>
               {isEmpty ? (
                 <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <div className="text-2xl mb-2">🏃</div>
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-navy-600 to-navy-800 flex items-center justify-center text-xl text-white mb-2">
+                    🏃
+                  </div>
                   <div className="text-sm text-navy-600 font-medium mb-1">기록을 남겨보세요!</div>
                   <div className="text-xs text-navy-500">첫 기록을 달성하면 여기에 표시됩니다</div>
                 </div>

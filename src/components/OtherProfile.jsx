@@ -41,7 +41,7 @@ const OtherProfile = ({ user, userData, runs, currentUser }) => {
           {/* 크루명 (있으면) */}
           {userData?.crewName && (
             <p className="text-xs sm:text-sm text-navy-600 mb-2">
-              🏃 {userData.crewName}
+              👟 {userData.crewName}
             </p>
           )}
           
