@@ -1,4 +1,4 @@
-import { db, collection, addDoc, doc, getDoc, deleteDoc, query, where, getDocs, Timestamp, functions, httpsCallable, auth, sendPasswordResetEmail } from '../config/firebase';
+import { db, collection, addDoc, doc, getDoc, deleteDoc, query, where, getDocs, Timestamp, functions, httpsCallable } from '../config/firebase';
 
 /**
  * 6자리 인증 코드 생성
@@ -110,10 +110,10 @@ export const verifyCode = async (email, code) => {
  * 비밀번호 재설정 메일 전송
  */
 export const sendResetPasswordEmail = async (email) => {
-  const actionCodeSettings = {
-    url: 'https://runlog.vercel.app/?mode=resetPassword',
-    handleCodeInApp: false,
-  };
+  const sendPasswordResetLink = httpsCallable(functions, 'sendPasswordResetLink');
+  const result = await sendPasswordResetLink({ email });
 
-  await sendPasswordResetEmail(auth, email, actionCodeSettings);
+  if (!result.data || !result.data.success) {
+    throw new Error('비밀번호 재설정 이메일 전송에 실패했습니다.');
+  }
 };
