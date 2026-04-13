@@ -1,0 +1,15 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+functions/node_modules/
+
+# Build outputs
+dist/
+
+# Sensitive signing keys
+*.keystore
+runlog.keystore
