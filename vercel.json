@@ -9,6 +9,10 @@
       "destination": "/admin-panel.html"
     },
     {
+      "source": "/privacy-policy.html",
+      "destination": "/privacy-policy.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/"
     }
