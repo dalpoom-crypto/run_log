@@ -26,6 +26,8 @@ export { httpsCallable };
 export {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   updateProfile,
