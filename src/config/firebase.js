@@ -37,6 +37,9 @@ export {
   deleteUser,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
+  setPersistence,
+  browserLocalPersistence,
 } from 'firebase/auth';
 
 export {

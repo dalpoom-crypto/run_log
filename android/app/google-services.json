@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "325067679087",
+    "project_id": "run-log-31420",
+    "storage_bucket": "run-log-31420.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:325067679087:android:9733114ff5a469b41fb49a",
+        "android_client_info": {
+          "package_name": "com.runlog.app.kr"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "325067679087-0tqjtspq4ptu9tu1k9tbkpglemtbkc19.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.runlog.app.kr",
+            "certificate_hash": "bbcaad37dd004c385b8b7cdcfe810a8337d98a0f"
+          }
+        },
+        {
+          "client_id": "325067679087-u7jsmmufmfjha1hkbi3flshdoppdp1bq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQuOU3wpEz5iVm0iC1OANrMXylgo88a5Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "325067679087-u7jsmmufmfjha1hkbi3flshdoppdp1bq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

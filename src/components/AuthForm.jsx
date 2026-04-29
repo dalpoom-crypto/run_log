@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
@@ -8,6 +10,9 @@ import {
   confirmPasswordReset,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
+  setPersistence,
+  browserLocalPersistence,
 } from '../config/firebase';
 import { auth, db, doc, getDoc, setDoc, Timestamp } from '../config/firebase';
 import { showToast } from '../utils/toast';
@@ -19,6 +24,10 @@ import {
   verifyCode,
   sendResetPasswordEmail,
 } from '../utils/emailVerification';
+
+// React StrictMode(개발 모드)에서 마운트/언마운트가 한 번 더 발생할 수 있어서,
+// redirect 결과 처리(getRedirectResult)를 "1회만" 하도록 전역 플래그를 둡니다.
+let redirectResultHandled = false;
 
 const AuthForm = ({ onAuthSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -44,6 +53,11 @@ const AuthForm = ({ onAuthSuccess }) => {
   const [oobCode, setOobCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+
+  const onAuthSuccessRef = useRef(onAuthSuccess);
+  useEffect(() => {
+    onAuthSuccessRef.current = onAuthSuccess;
+  }, [onAuthSuccess]);
 
   const ensureGoogleUserProfile = async (user) => {
     const userDocRef = doc(db, 'users', user.uid);
@@ -85,16 +99,38 @@ const AuthForm = ({ onAuthSuccess }) => {
   }, []);
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      return;
+    }
+
+    let isMounted = true;
     const processRedirectResult = async () => {
       try {
+        if (redirectResultHandled) {
+          return;
+        }
+        redirectResultHandled = true;
+
+        // redirect 결과 처리 전에 persistence를 먼저 고정합니다.
+        await setPersistence(auth, browserLocalPersistence);
+
         const redirectResult = await getRedirectResult(auth);
+        if (!isMounted) return;
         if (!redirectResult?.user) {
           return;
         }
 
         await ensureGoogleUserProfile(redirectResult.user);
-        onAuthSuccess();
+        if (!isMounted) return;
+        onAuthSuccessRef.current();
       } catch (err) {
+        if (!isMounted) return;
+        // `getRedirectResult`에 필요한 임시 상태(initial state)가 WebView 쪽에서 사라지면 발생할 수 있습니다.
+        if (typeof err?.message === 'string' && err.message.includes('missing initial state')) {
+          setError('구글 로그인 처리 중 오류가 발생했습니다. 앱 내 WebView에서 세션 저장소가 차단/초기화될 수 있어요.');
+          return;
+        }
+
         if (err.code === 'auth/account-exists-with-different-credential') {
           setError('이미 같은 이메일로 가입된 계정이 있습니다. 이메일/비밀번호로 로그인해 주세요.');
         } else {
@@ -104,7 +140,10 @@ const AuthForm = ({ onAuthSuccess }) => {
     };
 
     processRedirectResult();
-  }, [onAuthSuccess]);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleNicknameCheck = async () => {
     const trimmedNickname = nickname.trim();
@@ -286,11 +325,32 @@ const AuthForm = ({ onAuthSuccess }) => {
     setError('');
     setLoading(true);
     try {
+      // WebView에서 `sessionStorage`가 막히면 redirect 상태(initial state)를 복구하지 못해
+      // "missing initial state" 에러가 날 수 있어 localStorage 기반 persistence로 전환합니다.
+      await setPersistence(auth, browserLocalPersistence);
+
+      if (Capacitor.isNativePlatform()) {
+        // 네이티브에서는 WebView OAuth 대신 네이티브 Google SDK로 로그인 후
+        // Firebase JS SDK에 credential을 전달해 동일 세션으로 맞춥니다.
+        const nativeResult = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = nativeResult.credential?.idToken ?? null;
+        const accessToken = nativeResult.credential?.accessToken ?? null;
+        const firebaseCredential = GoogleAuthProvider.credential(idToken, accessToken);
+        const userCredential = await signInWithCredential(auth, firebaseCredential);
+        await ensureGoogleUserProfile(userCredential.user);
+        onAuthSuccess();
+        return;
+      }
+
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
       await ensureGoogleUserProfile(userCredential.user);
       onAuthSuccess();
     } catch (err) {
+      if (typeof err?.message === 'string' && err.message.includes('No credentials available')) {
+        setError('구글 로그인 계정 정보를 찾지 못했습니다. Firebase Android SHA-1 등록과 에뮬레이터 Google 계정 로그인을 확인해 주세요.');
+        return;
+      }
       if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
         try {
           const provider = new GoogleAuthProvider();

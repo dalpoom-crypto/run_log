@@ -1,0 +1,13 @@
+{
+  "appId": "com.runlog.app.kr",
+  "appName": "RunLog",
+  "webDir": "dist",
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com"
+      ]
+    }
+  }
+}

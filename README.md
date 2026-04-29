@@ -76,6 +76,22 @@ npm run preview
    - 코드 재작성 필요
    - 완전한 네이티브 성능
 
+### Android 구글 로그인 체크리스트 (Capacitor + Firebase)
+
+앱에서 구글 로그인이 실패하거나 `No credentials available`가 뜨면 아래 항목을 순서대로 확인하세요.
+
+1. Firebase 콘솔 > 프로젝트 설정 > 일반 > Android 앱 등록
+   - 패키지명: `com.runlog.app.kr`
+2. 같은 Android 앱에 SHA-1 지문 등록
+3. `google-services.json` 재다운로드
+4. 파일 교체: `android/app/google-services.json`
+5. 동기화: `npx cap sync android`
+6. Android Studio에서 앱 재실행
+
+추가 확인:
+- Firebase Authentication > Sign-in method에서 Google 제공자 활성화
+- 에뮬레이터 사용 시 Google 계정이 로그인되어 있는지 확인
+
 ## 프로젝트 구조
 
 ```
